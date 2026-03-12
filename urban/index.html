@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D Map + Search</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+
+<style>
+  body { margin: 0; overflow: hidden; font-family: sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+  
+  .mapboxgl-ctrl-geocoder {
+  position: absolute !important;
+  top: 180%;
+  left: 30%;
+  transform: translate(-320%, -80%);
+  fill: #000000;
+  width: 400px;
+  opacity: 0.7;
+}
+
+#toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 24px;
+  background: #ffffff;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 1) 0%, rgba(200, 203, 211, 1) 50%, rgb(228, 228, 228) 100%);
+
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolbar-content {
+  color: white;
+  font-size: 18px;
+  letter-spacing: 1px;
+}
+#map {
+  position:absolute;
+  top:0;
+  bottom:0;
+  width:100%;
+  z-index:0;
+}
+
+#searchToggle{
+  position:fixed;
+   width:  20px;
+  top:20px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:9999;
+  display:inline-block;
+  cursor: pointer;
+   
+}
+
+/* 
+#sbar, #sbar2{
+
+  display:block;
+  cursor:pointer;
+}
+
+#sbar{
+  display:none;
+}
+#sbar{
+  display:block;
+}
+
+
+/* hover only on the icon */
+/* #sbar2:hover{
+  display:none;
+}
+
+#sbar2:hover + #sbar{
+  display:block;
+} */ 
+
+.mapboxgl-ctrl-geocoder{
+  display:none;
+}
+</style>
+</head>
+
+<body>
+  <div id="toolbar">
+  <div class="toolbar-content">
+  </div>
+</div>
+
+<div id="searchToggle">
+<img src="assets/images/sbar.png"
+onmouseover="this.src='assets/images/sbar1.png'"
+onmouseout="this.src='assets/images/sbar.png'">
+</div>
+
+
+
+<div id="map"></div>
+
+
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.1.0/mapbox-gl-geocoder.min.js"></script>
+<!-- <link rel="stylesheet" href="style.css"> -->
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.1.0/mapbox-gl-geocoder.css">
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
+
+
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiYWJoaXZvbGV0aSIsImEiOiJjbW05cWV4ZTEwNXJtMnVwdjNyNmg3YmtzIn0.18DTC_mGG-07zo8XgcOgXg';
+
+const map = new mapboxgl.Map({ //
+  container: 'map',
+  style: 'mapbox://styles/mapbox/dark-v11',
+  center: [-73.5673, 45.5017],
+  zoom: 15,
+  pitch: 60,
+  bearing: -20,
+  antialias: true
+});
+
+map.on('load', () => {
+  map.addControl(
+  new mapboxgl.GeolocateControl({
+    positionOptions: {
+      enableHighAccuracy: true
+    },
+    trackUserLocation: true,
+    showUserHeading: false
+  }),
+  "bottom-left"
+);
+
+
+
+  // 3D BUILDINGS
+  map.addLayer({
+    id: '3d-buildings',
+    source: 'composite',
+    'source-layer': 'building',
+    filter: ['==', 'extrude', 'true'],
+    type: 'fill-extrusion',
+    minzoom: 4,
+    paint: {
+      'fill-extrusion-color': [
+         'case',
+      ['boolean', ['feature-state', 'selected'], false],
+      '#FFF', 
+        '#111'
+      ],
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': ['get', 'min_height'],
+      'fill-extrusion-opacity': 1
+    }
+  });
+
+});
+
+map.on("click", (e) => {
+  highlightBuilding(e.coord1,e.coord2);
+});
+
+
+const coordinatesGeocoder = function (query) {
+  const matches = query.match(
+    /^[ ]*(?:Lat: )?(-?\d+\.?\d*)[, ]+(?:Lng: )?(-?\d+\.?\d*)[ ]*$/i
+  );
+  if (!matches) return null;
+
+  function coordinateFeature(lng, lat) {
+    return {
+      center: [lng, lat],
+      geometry: {
+        type: 'Point',
+        coordinates: [lng, lat]
+      },
+      place_name: 'Lat: ' + lat + ' Lng: ' + lng,
+      place_type: ['coordinate'],
+      type: 'Feature'
+    };
+  }
+
+  const coord1 = Number(matches[1]);
+  const coord2 = Number(matches[2]);
+  const geocodes = [];
+
+  if (coord1 < -90 || coord1 > 90) {
+    geocodes.push(coordinateFeature(coord1, coord2));
+  }
+
+  if (coord2 < -90 || coord2 > 90) {
+    geocodes.push(coordinateFeature(coord2, coord1));
+  }
+
+  if (geocodes.length === 0) {
+    geocodes.push(coordinateFeature(coord1, coord2));
+    geocodes.push(coordinateFeature(coord2, coord1));
+  }
+
+  return geocodes;
+};
+
+const geocoder = new MapboxGeocoder({
+  accessToken: mapboxgl.accessToken,
+  localGeocoder: coordinatesGeocoder,
+  mapboxgl: mapboxgl,
+  zoom: 17,
+  placeholder: '    ',
+  reverseGeocode: true
+});
+
+map.addControl(geocoder);
+
+let marker = null;
+
+geocoder.on('result', (e) => {
+
+  const coords = e.result.center;
+  const lng = coords[0];
+  const lat = coords[1];
+
+  map.flyTo({
+    center: coords,
+    zoom: 17,
+    pitch: 60
+  });
+
+  map.once("moveend", () => {
+    highlightBuilding(lng, lat);
+  });
+
+});
+
+function highlightBuilding(lng, lat) {
+
+  const point = map.project([lng, lat]);
+
+  const features = map.queryRenderedFeatures(point, {
+    layers: ['3d-buildings']
+  });
+
+  if (!features || features.length === 0) {
+    console.log("No building found at that coordinate");
+    return;
+  }
+
+  const building = features[0];
+
+  if (!building.id) {
+    console.log("Building has no ID (cannot highlight)");
+    return;
+  }
+
+  map.setFeatureState(
+    {
+      source: 'composite',
+      sourceLayer: 'building',
+      id: building.id
+    },
+    { selected: true }
+  );
+}
+let searchActive = false;
+
+const icon1 = document.getElementById("sbar");
+const icon2 = document.getElementById("sbar2");
+
+function toggleSearch(){
+
+  const searchBar = document.querySelector(".mapboxgl-ctrl-geocoder");
+
+  if(!searchActive){
+    searchBar.style.display = "block";
+    searchActive = true;
+  }else{
+    searchBar.style.display = "none";
+    searchActive = false;
+  }
+
+}
+
+icon1.addEventListener("click", toggleSearch);
+icon2.addEventListener("click", toggleSearch);
+</script>
+
+</body>
+</html>
